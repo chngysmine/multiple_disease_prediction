@@ -1,12 +1,16 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pickle
 import os
 from streamlit_option_menu import option_menu
 from typing import Dict, Tuple, List
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import json
+import nbformat
+from nbconvert import HTMLExporter
 
 st.set_page_config(
     page_title="Virtual Health Assistant",
@@ -18,509 +22,579 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+    :root {
+        --ink: #0c111d;
+        --jet: #1b1f30;
+        --aqua: #5ff4f4;
+        --violet: #a855f7;
+        --mint: #22d3ee;
+        --text: #edf2ff;
+        --muted: #8ea2c1;
+        --glass: rgba(255,255,255,0.05);
+        --border: rgba(255,255,255,0.12);
+        --card-grad: linear-gradient(135deg, rgba(95,244,244,0.08), rgba(168,85,247,0.08));
+    }
+
     * {
-        margin: 0;
-        padding: 0;
+        font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
     }
-    
-    html, body, [data-testid="stAppViewContainer"] {
-        background: linear-gradient(135deg, #0f1419 0%, #1a1f2e 100%);
-        color: #e0e0e0;
+
+    body,
+    html,
+    [data-testid="stAppViewContainer"] {
+        background: radial-gradient(circle at top, rgba(88, 28, 135, 0.35), transparent 45%),
+                    radial-gradient(circle at 20% 20%, rgba(34, 211, 238, 0.25), transparent 35%),
+                    radial-gradient(circle at 80% 0%, rgba(99, 102, 241, 0.35), transparent 35%),
+                    #05070f;
+        color: var(--text);
     }
-    
-    /* Professional sidebar styling - Instagram/Facebook style */
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #1a1f2e 0%, #0f1419 100%);
-        border-right: 1px solid rgba(0, 200, 200, 0.1);
-        height: 100vh;
-        overflow: hidden !important;
+
+    .main .block-container {
+        padding: 2.5rem clamp(1.5rem, 4vw, 4.25rem) 4rem;
+        max-width: 1350px;
+        margin: 0 auto;
     }
-    
-    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-        gap: 0 !important;
-        overflow: hidden !important;
-    }
-    
-    /* Optimize sidebar spacing - remove all padding */
-    [data-testid="stSidebar"] > div {
-        padding: 0 !important;
-        overflow: hidden !important;
-        height: 100vh;
-        display: flex;
-        flex-direction: column;
-    }
-    
-    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div {
-        overflow: visible !important;
-    }
-    
-    /* Ensure proper flexbox layout for sidebar content */
-    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-        max-height: 100vh;
+
+    .section-shell {
+        margin-bottom: 2.5rem;
+        padding: 2.25rem clamp(1.2rem, 3vw, 2.75rem);
+        border-radius: 28px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(9, 12, 22, 0.75);
+        box-shadow: 0 25px 55px rgba(3,5,14,0.55);
+        position: relative;
         overflow: hidden;
     }
-    
-    /* Make option menu more compact */
-    .css-1d391kg {
-        padding: 0 !important;
-        margin: 0 !important;
+
+    @media (max-width: 980px) {
+        .main .block-container {
+            padding: 2rem 1.25rem 3rem;
+        }
+        .hero {
+            padding: 32px;
+        }
+        .model-card {
+            min-height: 200px;
+        }
     }
-    
-    /* Hide option menu title/icon if empty */
-    .css-1d391kg > div:first-child {
-        display: none !important;
+
+    [data-testid="stSidebar"] {
+        background: rgba(5, 7, 15, 0.85);
+        backdrop-filter: blur(12px);
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
     }
-    
-    /* Remove any inner card/wrapper backgrounds in sidebar */
-    [data-testid="stSidebar"] section,
-    [data-testid="stSidebar"] .block-container,
-    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div {
-        background: transparent !important;
-        box-shadow: none !important;
-        border: none !important;
+
+    [data-testid="stSidebar"] * {
+        color: var(--muted);
     }
-    
-    /* Custom scrollbar for navigation if needed */
-    .sidebar-nav-container::-webkit-scrollbar {
-        width: 4px;
-    }
-    
-    .sidebar-nav-container::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    
-    .sidebar-nav-container::-webkit-scrollbar-thumb {
-        background: rgba(0, 200, 200, 0.3);
-        border-radius: 2px;
-    }
-    
-    .sidebar-nav-container::-webkit-scrollbar-thumb:hover {
-        background: rgba(0, 200, 200, 0.5);
-    }
-    
-    .main {
-        background: linear-gradient(135deg, #0f1419 0%, #1a1f2e 100%);
-        margin-left: 0;
-    }
-    
-    /* Professional header styling - better spacing */
-    .sidebar-header {
-        background: transparent;
-        border-bottom: none;
-        padding: 16px 12px;
-        text-align: center;
-        margin: 0;
-        flex-shrink: 0;
-    }
-    
+
     .sidebar-header h2 {
-        color: #00c8c8;
-        margin: 0;
-        font-size: 24px;
-        font-weight: 700;
-        line-height: 1.3;
-        margin-bottom: 4px;
+        color: var(--text);
+        letter-spacing: 2px;
     }
-    
+
     .sidebar-header p {
-        color: #aaa;
-        font-size: 10px;
-        margin: 4px 0 0 0;
-        font-weight: 400;
-        line-height: 1.4;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 2px;
     }
-    
-    /* Stat boxes with comfortable spacing */
-    .sidebar-stats-container {
-        padding: 12px 10px;
-        flex-shrink: 0;
+
+    .stButton > button,
+    .cta-button {
+        background: linear-gradient(120deg, #5ff4f4, #a855f7);
+        color: #04060d;
+        font-weight: 600;
+        border: none;
+        border-radius: 999px;
+        padding: 0.85rem 1.6rem;
+        transition: all 0.25s ease;
+        box-shadow: 0 15px 45px rgba(117, 219, 255, 0.3);
     }
-    
-    /* Better column spacing in stats grid */
-    .sidebar-stats-container [data-testid="column"] {
-        padding: 0 4px !important;
-        margin-bottom: 4px;
+
+    .stButton > button:hover,
+    .cta-button:hover {
+        transform: translateY(-4px) scale(1.01);
+        box-shadow: 0 18px 55px rgba(117, 219, 255, 0.5);
     }
-    
-    /* General sidebar column spacing */
-    [data-testid="stSidebar"] [data-testid="column"] {
-        padding: 0 4px !important;
+
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0.8rem;
+        border-bottom: none;
     }
-    
-    /* Ensure proper spacing between stat rows */
-    .sidebar-stats-container [data-testid="column"]:first-child,
-    .sidebar-stats-container [data-testid="column"]:last-child {
-        padding: 0 4px !important;
+
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 999px;
+        padding: 0.6rem 1.5rem;
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--muted);
+        border: 1px solid transparent;
+        transition: all 0.2s ease;
     }
-    
-    .sidebar-stat {
-        background: linear-gradient(135deg, rgba(0, 200, 200, 0.08) 0%, rgba(0, 150, 150, 0.04) 100%);
-        border: 1px solid rgba(0, 200, 200, 0.15);
-        border-radius: 8px;
-        padding: 12px 8px;
-        text-align: center;
-        margin: 5px 0;
-        height: 100%;
-        min-height: 60px;
+
+    .stTabs [aria-selected="true"] {
+        color: var(--ink);
+        background: linear-gradient(120deg, #5ff4f4, #a855f7);
+        border-color: transparent;
+        font-weight: 600;
+    }
+
+    .hero {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 32px;
+        padding: 48px;
+        margin-bottom: 32px;
+        backdrop-filter: blur(18px);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .hero::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at top right, rgba(111, 66, 193, 0.35), transparent 60%);
+        opacity: 0.8;
+        pointer-events: none;
+    }
+
+    .hero h1 {
+        font-size: 3rem;
+        margin: 0.5rem 0 1rem;
+        color: var(--text);
+    }
+
+    .hero p {
+        color: var(--muted);
+        font-size: 1.1rem;
+        max-width: 560px;
+    }
+
+    .neon-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        background: rgba(95, 244, 244, 0.18);
+        border: 1px solid rgba(95, 244, 244, 0.35);
+        border-radius: 999px;
+        padding: 0.35rem 1rem;
+        font-size: 0.9rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+    }
+
+    .hero-actions {
+        display: flex;
+        gap: 0.8rem;
+        flex-wrap: wrap;
+        margin-top: 1.5rem;
+    }
+
+    .metric-chip {
+        padding: 0.6rem 1rem;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: var(--muted);
+        font-size: 0.9rem;
+    }
+
+    .neo-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 24px;
+        padding: 24px;
+        box-shadow: 0 25px 65px rgba(5, 7, 15, 0.55);
+        transition: transform 0.4s cubic-bezier(.2, .8, .2, 1);
+    }
+
+    .neo-card:hover {
+        transform: translateY(-6px);
+        border-color: rgba(95, 244, 244, 0.45);
+    }
+
+    .neo-card h3 {
+        margin-bottom: 0.4rem;
+        color: var(--text);
+    }
+
+    .neo-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+    }
+
+    .glass-panel {
+        padding: 24px;
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(5, 7, 15, 0.6);
+    }
+
+    .section-header {
+        font-size: 1.6rem;
+        font-weight: 700;
+        margin: 2.5rem 0 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+    }
+
+    .section-header::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: linear-gradient(120deg, rgba(95, 244, 244, 0.4), transparent);
+    }
+
+    .section-subtitle {
+        margin: -1rem 0 1.5rem;
+        color: var(--muted);
+        max-width: 720px;
+    }
+
+    .section-shell::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at top right, rgba(95,244,244,0.08), transparent 60%);
+        opacity: 0.7;
+        pointer-events: none;
+    }
+
+    .section-shell > * {
+        position: relative;
+        z-index: 1;
+    }
+
+    .tip-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 18px;
+        margin-top: 1.25rem;
+    }
+
+    .tip-card {
+        padding: 1rem 1.25rem;
+        border-radius: 18px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.04);
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
+    }
+
+    .info-panel {
+        padding: 1.4rem 1.6rem;
+        border-radius: 20px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(5,8,18,0.85);
+        margin-top: 1.25rem;
+    }
+
+    .section-shell .stButton {
+        margin-top: 0.9rem;
+    }
+
+    .result-shell {
+        margin-top: 1.5rem;
+        padding: 1.5rem;
+        border-radius: 24px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(11,14,24,0.9);
+        box-shadow: 0 25px 60px rgba(3,5,14,0.5);
         display: flex;
         flex-direction: column;
-        justify-content: center;
-        align-items: center;
+        gap: 1rem;
     }
-    
-    .sidebar-stat h4 {
-        color: #aaa;
-        font-size: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin: 0 0 6px 0;
-        line-height: 1.3;
+
+    .timeline {
+        position: relative;
+        padding-left: 30px;
+        border-left: 1px dashed rgba(255,255,255,0.2);
     }
-    
-    .sidebar-stat .value {
-        color: #00c8c8;
-        font-size: 20px;
-        font-weight: 700;
-        line-height: 1.2;
+
+    .timeline-step {
+        margin-bottom: 18px;
+        padding-left: 12px;
+        position: relative;
     }
-    
-    /* Better divider spacing */
-    .sidebar-divider {
-        border-top: 1px solid rgba(0, 200, 200, 0.1);
-        margin: 10px 10px;
-        flex-shrink: 0;
+
+    .timeline-step::before {
+        content: "";
+        position: absolute;
+        left: -39px;
+        top: 6px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: linear-gradient(120deg, #5ff4f4, #a855f7);
+        box-shadow: 0 0 18px rgba(95, 244, 244, 0.6);
     }
-    
-    /* Navigation container with better spacing */
-    .sidebar-nav-container {
-        flex: 1;
-        overflow-y: auto;
-        overflow-x: hidden;
-        padding: 8px 6px;
+
+    .risk-low,
+    .risk-mid,
+    .risk-high,
+    .recommendation-box,
+    .success-message,
+    .warning-message,
+    .achievement-badge,
+    .info-card,
+    .stat-box {
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.03);
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
     }
-    
-    /* Recent activity section with comfortable spacing */
-    .recent-activity-section {
-        padding: 12px 10px;
-        flex-shrink: 0;
-        border-top: 1px solid rgba(0, 200, 200, 0.1);
-        margin-top: auto;
-    }
-    
-    .recent-activity {
-        background: rgba(0, 200, 200, 0.05);
-        border-left: 2px solid rgba(0, 200, 200, 0.3);
-        padding: 8px 10px;
-        margin: 6px 0;
-        border-radius: 6px;
-        font-size: 11px;
-        color: #aaa;
-        line-height: 1.5;
-    }
-    
-    .recent-activity .disease {
-        color: #00c8c8;
-        font-weight: 600;
-        font-size: 11px;
-        margin-bottom: 2px;
-    }
-    
-    .recent-activity .risk {
-        font-size: 10px;
-        color: #f59f00;
-    }
-    
-    .recent-activity-label {
-        color: #aaa;
-        font-size: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin: 0 0 8px 0;
-        font-weight: 600;
-    }
-    
-    /* Animated gradient backgrounds */
-    @keyframes gradientShift {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-    }
-    
-    @keyframes slideIn {
-        from { opacity: 0; transform: translateY(20px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.7; }
-    }
-    
-    /* Risk level badges with animations */
-    .risk-low {
-        background: linear-gradient(135deg, rgba(18, 184, 134, 0.15) 0%, rgba(18, 184, 134, 0.05) 100%);
-        border-left: 4px solid #12b886;
-        border-radius: 12px;
-        padding: 20px;
-        margin: 16px 0;
-        color: #12b886;
-        font-weight: 600;
-        animation: slideIn 0.5s ease-out;
-        box-shadow: 0 4px 12px rgba(18, 184, 134, 0.1);
-    }
-    
-    .risk-mid {
-        background: linear-gradient(135deg, rgba(245, 159, 0, 0.15) 0%, rgba(245, 159, 0, 0.05) 100%);
-        border-left: 4px solid #f59f00;
-        border-radius: 12px;
-        padding: 20px;
-        margin: 16px 0;
-        color: #f59f00;
-        font-weight: 600;
-        animation: slideIn 0.5s ease-out;
-        box-shadow: 0 4px 12px rgba(245, 159, 0, 0.1);
-    }
-    
-    .risk-high {
-        background: linear-gradient(135deg, rgba(224, 49, 49, 0.15) 0%, rgba(224, 49, 49, 0.05) 100%);
-        border-left: 4px solid #e03131;
-        border-radius: 12px;
-        padding: 20px;
-        margin: 16px 0;
-        color: #e03131;
-        font-weight: 600;
-        animation: slideIn 0.5s ease-out;
-        box-shadow: 0 4px 12px rgba(224, 49, 49, 0.1);
-    }
-    
-    /* Enhanced metric cards */
-    .metric-card {
-        background: linear-gradient(135deg, rgba(0, 200, 200, 0.12) 0%, rgba(0, 150, 150, 0.06) 100%);
-        border: 2px solid rgba(0, 200, 200, 0.25);
-        border-radius: 16px;
-        padding: 28px;
-        text-align: center;
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        cursor: pointer;
-        animation: slideIn 0.6s ease-out;
-    }
-    
-    .metric-card:hover {
-        border-color: rgba(0, 200, 200, 0.5);
-        background: linear-gradient(135deg, rgba(0, 200, 200, 0.18) 0%, rgba(0, 150, 150, 0.12) 100%);
-        transform: translateY(-8px);
-        box-shadow: 0 12px 32px rgba(0, 200, 200, 0.2);
-    }
-    
-    .metric-card h3 {
-        color: #00c8c8;
-        margin-top: 16px;
-        font-size: 26px;
-        font-weight: 700;
-    }
-    
-    .metric-card p {
-        color: #a0a0a0;
-        font-size: 14px;
-        margin-top: 10px;
-        line-height: 1.5;
-    }
-    
-    /* Welcome banner */
-    .welcome-banner {
-        background: linear-gradient(135deg, #00c8c8 0%, #0099cc 100%);
-        border-radius: 16px;
-        padding: 40px;
-        margin-bottom: 32px;
-        color: white;
-        box-shadow: 0 8px 32px rgba(0, 200, 200, 0.3);
-        animation: slideIn 0.7s ease-out;
-    }
-    
-    .welcome-banner h1 {
-        font-size: 36px;
-        margin-bottom: 12px;
-        font-weight: 800;
-    }
-    
-    .welcome-banner p {
-        font-size: 16px;
-        opacity: 0.95;
+
+    .recommendation-box {
+        padding: 1rem 1.25rem;
         line-height: 1.6;
     }
-    
-    /* Input styling */
-    .stTextInput > div > div > input,
-    .stNumberInput > div > div > input,
-    .stSelectbox > div > div > select {
-        background-color: #1a1f2e !important;
-        border: 2px solid rgba(0, 200, 200, 0.2) !important;
-        color: #e0e0e0 !important;
-        border-radius: 10px !important;
-        padding: 12px 16px !important;
-        transition: all 0.3s ease !important;
+
+    .warning-message,
+    .success-message,
+    .result-shell .risk-low,
+    .result-shell .risk-mid,
+    .result-shell .risk-high {
+        padding: 1rem 1.25rem;
     }
-    
-    .stTextInput > div > div > input:focus,
-    .stNumberInput > div > div > input:focus,
-    .stSelectbox > div > div > select:focus {
-        border-color: #00c8c8 !important;
-        box-shadow: 0 0 0 3px rgba(0, 200, 200, 0.15) !important;
+
+    .result-shell > *:not(:last-child) {
+        margin-bottom: 1rem;
     }
-    
-    /* Button styling */
-    .stButton > button {
-        background: linear-gradient(135deg, #00c8c8 0%, #0099cc 100%);
-        color: white;
-        border: none;
-        border-radius: 10px;
-        padding: 14px 32px;
-        font-weight: 700;
-        font-size: 16px;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        width: 100%;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
+
+    .result-shell .stTabs {
+        padding: 0.3rem 0.35rem 0.6rem;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.02);
     }
-    
-    .stButton > button:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 12px 24px rgba(0, 200, 200, 0.4);
+
+    .result-shell .stTabs [data-baseweb="tab"] {
+        margin: 0 0.15rem;
     }
-    
-    .stButton > button:active {
-        transform: translateY(-1px);
-    }
-    
-    /* Tabs styling */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 12px;
-        border-bottom: 2px solid rgba(0, 200, 200, 0.1);
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        background-color: rgba(0, 200, 200, 0.05);
-        border-radius: 10px;
-        color: #a0a0a0;
-        padding: 12px 20px;
-        transition: all 0.3s ease;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background-color: rgba(0, 200, 200, 0.25);
-        color: #00c8c8;
-        font-weight: 600;
-    }
-    
-    /* Section headers */
-    .section-header {
-        color: #00c8c8;
-        font-size: 28px;
-        font-weight: 800;
-        margin-top: 40px;
-        margin-bottom: 24px;
-        border-bottom: 3px solid rgba(0, 200, 200, 0.3);
-        padding-bottom: 16px;
-        animation: slideIn 0.6s ease-out;
-    }
-    
-    /* Recommendation box */
-    .recommendation-box {
-        background: linear-gradient(135deg, rgba(0, 200, 200, 0.08) 0%, rgba(0, 150, 150, 0.04) 100%);
-        border: 2px solid rgba(0, 200, 200, 0.2);
-        border-radius: 12px;
-        padding: 20px;
-        margin: 16px 0;
-        line-height: 1.8;
-        color: #e0e0e0;
-        animation: slideIn 0.5s ease-out;
-    }
-    
-    .success-message {
-        background: linear-gradient(135deg, rgba(18, 184, 134, 0.15) 0%, rgba(18, 184, 134, 0.05) 100%);
-        border-left: 4px solid #12b886;
-        color: #12b886;
-        padding: 20px;
-        border-radius: 12px;
-        margin: 20px 0;
-        font-weight: 600;
-        animation: slideIn 0.5s ease-out;
-    }
-    
-    .warning-message {
-        background: linear-gradient(135deg, rgba(224, 49, 49, 0.15) 0%, rgba(224, 49, 49, 0.05) 100%);
-        border-left: 4px solid #e03131;
-        color: #e03131;
-        padding: 20px;
-        border-radius: 12px;
-        margin: 20px 0;
-        font-weight: 600;
-        animation: slideIn 0.5s ease-out;
-    }
-    
-    /* Achievement badge */
-    .achievement-badge {
-        background: linear-gradient(135deg, rgba(255, 193, 7, 0.15) 0%, rgba(255, 152, 0, 0.05) 100%);
-        border: 2px solid rgba(255, 193, 7, 0.3);
-        border-radius: 12px;
-        padding: 16px;
-        margin: 12px 0;
-        text-align: center;
-        color: #ffc107;
-        font-weight: 600;
-        animation: slideIn 0.5s ease-out;
-    }
-    
-    /* Progress bar */
-    .progress-container {
-        background-color: rgba(0, 200, 200, 0.1);
-        border-radius: 10px;
-        height: 12px;
-        overflow: hidden;
-        margin: 12px 0;
-    }
-    
-    .progress-bar {
-        background: linear-gradient(90deg, #00c8c8 0%, #0099cc 100%);
-        height: 100%;
-        border-radius: 10px;
-        transition: width 0.5s ease;
-    }
-    
-    /* Info card */
+
+    .risk-low { border-left: 4px solid #22c55e; }
+    .risk-mid { border-left: 4px solid #facc15; }
+    .risk-high { border-left: 4px solid #f87171; }
+
     .info-card {
-        background: linear-gradient(135deg, rgba(0, 200, 200, 0.1) 0%, rgba(0, 150, 150, 0.05) 100%);
-        border: 1px solid rgba(0, 200, 200, 0.2);
-        border-radius: 12px;
-        padding: 20px;
-        margin: 16px 0;
-        line-height: 1.7;
+        transition: transform 0.25s ease, border-color 0.25s ease;
+    }
+
+    .info-card:hover {
+        transform: translateY(-4px);
+        border-color: rgba(95, 244, 244, 0.4);
+    }
+
+    .fade-in {
+        animation: fadeIn 0.6s ease forwards;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .floating {
+        animation: floating 6s ease-in-out infinite;
+    }
+
+    @keyframes floating {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-8px); }
     }
     
-    .stat-box {
-        background: linear-gradient(135deg, rgba(0, 200, 200, 0.12) 0%, rgba(0, 150, 150, 0.06) 100%);
-        border: 2px solid rgba(0, 200, 200, 0.2);
-        border-radius: 12px;
-        padding: 20px;
-        text-align: center;
-        margin: 12px 0;
+    [data-testid="stSidebar"] {
+        min-width: 280px;
+        max-width: 320px;
+        padding: 0 8px;
     }
-    
-    .stat-box h4 {
-        color: #a0a0a0;
-        font-size: 12px;
+
+    .sidebar-brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 28px 14px 10px;
+    }
+
+    .brand-icon {
+        width: 52px;
+        height: 52px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(95,244,244,0.25), rgba(168,85,247,0.25));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 26px;
+    }
+
+    .sidebar-brand h3 {
+        margin: 0;
+        color: var(--text);
+        font-size: 1.4rem;
+    }
+
+    .sidebar-brand span,
+    .sidebar-brand p {
+        display: block;
+        margin: 0;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.28rem;
+        color: var(--muted);
+    }
+
+    .sidebar-divider {
+        margin: 16px 14px;
+        height: 1px;
+        background: linear-gradient(90deg, rgba(95,244,244,0.4), transparent);
+    }
+
+    .sidebar-note {
+        padding: 18px 16px 28px;
+        color: var(--muted);
+        font-size: 0.85rem;
+    }
+
+    .showcase-wrapper {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 24px;
+    }
+
+    .model-card {
+        position: relative;
+        padding: 26px;
+        border-radius: 28px;
+        background: var(--card-grad);
+        border: 1px solid rgba(255,255,255,0.1);
+        overflow: hidden;
+        min-height: 250px;
+        box-shadow: 0 25px 50px rgba(5,7,15,0.45);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+
+    .model-card::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at top right, rgba(255,255,255,0.12), transparent 55%);
+        opacity: 0;
+        transition: opacity 0.4s ease;
+    }
+
+    .model-card:hover::after {
+        opacity: 1;
+    }
+
+    .model-icon {
+        width: 54px;
+        height: 54px;
+        border-radius: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        background: rgba(255,255,255,0.08);
+        margin-bottom: 16px;
+    }
+
+    .model-card h3 {
+        margin: 0;
+        font-size: 1.35rem;
+    }
+
+    .model-card p {
+        margin: 8px 0 18px;
+        color: var(--muted);
+        min-height: 60px;
+    }
+
+    .model-chip {
+        display: inline-flex;
+        padding: 0.35rem 0.9rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.2);
+        font-size: 0.75rem;
         text-transform: uppercase;
         letter-spacing: 1px;
-        margin-bottom: 8px;
     }
-    
-    .stat-box .value {
-        color: #00c8c8;
-        font-size: 32px;
-        font-weight: 800;
+
+    div[data-testid="stVerticalBlock"]:has(.overlay-sentinel) {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: rgba(3, 5, 14, 0.96);
+        backdrop-filter: blur(18px);
+        padding: clamp(18px, 3vw, 40px);
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    div[data-testid="stVerticalBlock"]:has(.overlay-sentinel) > div:not(:has(.overlay-sentinel)) {
+        width: 100%;
+        max-width: 1100px;
+        margin: 0 auto;
+        background: rgba(7,10,22,0.85);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 28px;
+        padding: clamp(18px, 2vw, 32px);
+        box-shadow: 0 35px 80px rgba(0,0,0,0.45);
+    }
+
+    .overlay-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 18px;
+        margin-bottom: 18px;
+    }
+
+    .overlay-title {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+    }
+
+    .overlay-title h2 {
+        margin: 0;
+    }
+
+    .overlay-title p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        max-width: 640px;
+    }
+
+    .overlay-icon {
+        width: 64px;
+        height: 64px;
+        border-radius: 20px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 30px;
+        background: rgba(255,255,255,0.08);
+    }
+
+    div[data-testid="stVerticalBlock"]:has(.overlay-sentinel) .stButton>button {
+        width: 100%;
+        border-radius: 18px;
+        border: 1px solid rgba(255,255,255,0.2);
+        padding: 0.65rem 1.4rem;
+        background: rgba(255,255,255,0.08);
+        color: var(--text);
+        font-weight: 600;
+    }
+
+    div[data-testid="stVerticalBlock"]:has(.overlay-sentinel) .stButton>button:hover {
+        border-color: rgba(95,244,244,0.5);
+        color: var(--aqua);
     }
     </style>
     """,
@@ -528,11 +602,39 @@ st.markdown(
 )
 
 working_dir = os.path.dirname(os.path.abspath(__file__))
+base_dir = Path(working_dir)
+
+NOTEBOOK_CONFIG = {
+    "Diabetes": {
+        "path": base_dir / "notebooks" / "Advance Project Diabetes Prediction Using ML.ipynb",
+        "description": "Complete training pipeline, preprocessing steps and performance visualizations for the diabetes prediction model.",
+        "tagline": "Glycemic insights & engineered feature tracking.",
+        "accent": "#5ff4f4",
+        "icon": "🩺"
+    },
+    "Heart Disease": {
+        "path": base_dir / "notebooks" / "Advance Project Heart Disease Prediction Using ML.ipynb",
+        "description": "End-to-end heart disease pipeline with distribution plots, correlation analysis and model evaluation charts.",
+        "tagline": "Cardio diagnostics blended with lifestyle cues.",
+        "accent": "#f472b6",
+        "icon": "❤️"
+    },
+    "Kidney Disease": {
+        "path": base_dir / "notebooks" / "Advance Project Kidney Disease Prediction Using ML.ipynb",
+        "description": "Visual journey of data cleaning, feature engineering and performance diagrams for kidney disease prediction.",
+        "tagline": "Renal panels layered with symptom awareness.",
+        "accent": "#a855f7",
+        "icon": "💧"
+    },
+}
 
 # Load models
 diabetes_model = pickle.load(open(f'{working_dir}/saved_models/diabetes.pkl','rb'))
 heart_disease_model = pickle.load(open(f'{working_dir}/saved_models/heart.pkl','rb'))
-kidney_disease_model = pickle.load(open(f'{working_dir}/saved_models/kidney.pkl','rb'))
+# NOTE:
+# The pickle file for kidney model is named 'kindey.pkl' in the saved_models folder.
+# We load using that exact filename to avoid FileNotFoundError.
+kidney_disease_model = pickle.load(open(f'{working_dir}/saved_models/kindey.pkl','rb'))
 
 if 'user_predictions' not in st.session_state:
     st.session_state.user_predictions = []
@@ -542,6 +644,39 @@ if 'health_streak' not in st.session_state:
     st.session_state.health_streak = 0
 if 'points' not in st.session_state:
     st.session_state.points = 0
+if 'viewer_open' not in st.session_state:
+    st.session_state.viewer_open = False
+if 'viewer_model' not in st.session_state:
+    st.session_state.viewer_model = None
+
+
+@st.cache_data(show_spinner=False)
+def load_notebook_html(nb_path: Path) -> Tuple[bool, str]:
+    """Convert notebook content to embeddable HTML."""
+    try:
+        if not nb_path.exists():
+            return False, f"Notebook not found: {nb_path.name}"
+        with nb_path.open("r", encoding="utf-8") as source:
+            notebook = nbformat.read(source, as_version=4)
+        exporter = HTMLExporter()
+        exporter.exclude_input_prompt = True
+        exporter.exclude_output_prompt = True
+        html_body, _ = exporter.from_notebook_node(notebook)
+        return True, html_body
+    except Exception as exc:
+        return False, str(exc)
+
+
+def open_model_viewer(model_key: str):
+    """Store which notebook should be visualized in fullscreen overlay."""
+    st.session_state.viewer_model = model_key
+    st.session_state.viewer_open = True
+
+
+def close_model_viewer():
+    """Close the fullscreen notebook viewer."""
+    st.session_state.viewer_model = None
+    st.session_state.viewer_open = False
 
 def get_recommendations() -> Dict[str, Dict[str, Dict[str, str]]]:
     """Comprehensive recommendation bank by disease and severity level."""
@@ -639,16 +774,22 @@ def check_achievements(disease: str, risk_level: str) -> List[str]:
     return new_achievements
 
 with st.sidebar:
-    # Minimal header
-    st.markdown("""
-    <div class='sidebar-header'>
-        <h2>🏥 VHA</h2>
-        <p>Virtual Health Assistant</p>
-        <p>AI-Powered Predictions</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class='sidebar-brand'>
+            <div class='brand-icon'>🏥</div>
+            <div>
+                <span>Virtual health assistant</span>
+                <h3>VHA</h3>
+                <p>AI-powered predictions</p>
+            </div>
+        </div>
+        <div class='sidebar-divider'></div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    # Navigation only
+    # Navigation only (main app pages)
     selected = option_menu(
         "",
         [
@@ -691,6 +832,15 @@ with st.sidebar:
                 "font-weight": "600",
             },
         }
+    )
+
+    st.markdown(
+        """
+        <div class='sidebar-note'>
+            Calibrated risk models, cinematic visuals, and instant wellness playbooks — all in one secure console.
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 
@@ -740,132 +890,257 @@ def render_recommendations(disease_key: str, prob_one: float):
         st.markdown(f"<div class='recommendation-box'>{bank['monitoring']}</div>", unsafe_allow_html=True)
 
 
+if st.session_state.viewer_open and st.session_state.viewer_model:
+    model_key = st.session_state.viewer_model
+    config = NOTEBOOK_CONFIG.get(model_key)
+    st.markdown(
+        """
+        <style>
+        body { overflow: hidden !important; }
+        [data-testid="stSidebar"] { display: none !important; }
+        [data-testid="stAppViewContainer"] > .main {
+            margin-left: 0 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    overlay_block = st.container()
+    with overlay_block:
+        st.markdown("<div class='overlay-sentinel'></div>", unsafe_allow_html=True)
+        st.markdown(
+            f"""
+            <div class='overlay-header'>
+                <div class='overlay-title'>
+                    <span class='overlay-icon'>{config['icon']}</span>
+                    <div>
+                        <h2>{model_key} Visual Studio</h2>
+                        <p>{config['description']}</p>
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        close_col = st.columns([0.82, 0.18])[1]
+        with close_col:
+            if st.button("Close viewer ✕", key="close_viewer"):
+                close_model_viewer()
+                st.rerun()
+        success, payload = load_notebook_html(config["path"])
+        if success and payload.strip():
+            components.html(payload, height=900, scrolling=True)
+        elif success:
+            st.info("Notebook is empty or has no visible content to render.")
+        else:
+            st.error(f"Unable to load notebook: {payload}")
+    st.stop()
+
+
 if selected == 'Dashboard':
-    st.markdown("""
-    <div class='welcome-banner'>
-        <h1>👋 Welcome to Your Virtual Health Assistant</h1>
-        <p>Advanced AI-powered disease prediction and personalized health recommendations. Take control of your health today.</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown(f"""
-        <div class='stat-box'>
-            <h4>Total Predictions</h4>
-            <div class='value'>{len(st.session_state.user_predictions)}</div>
+    st.markdown(
+        """
+        <div class='hero fade-in'>
+            <span class='neon-pill'>Next-gen digital clinic</span>
+            <h1>Real-time disease intelligence powered by responsible AI.</h1>
+            <p>
+                Run hyper-personalized risk assessments for diabetes, heart disease, and kidney disease
+                with cinematic visuals, adaptive recommendations, and smooth micro-interactions.
+            </p>
+            <div class='hero-actions'>
+                <span class='metric-chip'>3 advanced predictive models</span>
+                <span class='metric-chip'>Precision recommendations</span>
+                <span class='metric-chip'>Continuous progress tracking</span>
+            </div>
         </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div class='stat-box'>
-            <h4>Health Points</h4>
-            <div class='value'>{st.session_state.points}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f"""
-        <div class='stat-box'>
-            <h4>Achievements</h4>
-            <div class='value'>{len(st.session_state.achievements)}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col4:
-        st.markdown(f"""
-        <div class='stat-box'>
-            <h4>Health Streak</h4>
-            <div class='value'>{st.session_state.health_streak}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("<div class='section-header'>🔬 Available Prediction Models</div>", unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("""
-        <div class='metric-card'>
-            <div style='font-size: 48px;'>🩺</div>
-            <h3>Diabetes</h3>
-            <p>Predict your risk of developing diabetes based on health metrics</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("""
-        <div class='metric-card'>
-            <div style='font-size: 48px;'>❤️</div>
-            <h3>Heart Disease</h3>
-            <p>Assess your cardiovascular health and heart disease risk</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown("""
-        <div class='metric-card'>
-            <div style='font-size: 48px;'>💧</div>
-            <h3>Kidney Disease</h3>
-            <p>Evaluate your kidney function and disease risk</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("<div class='section-header'>📚 How to Use</div>", unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        <div class='info-card'>
-        <h4>Step 1: Select a Disease</h4>
-        Choose one of the three disease prediction models from the sidebar menu.
-        
-        <h4>Step 2: Enter Your Health Data</h4>
-        Provide accurate health metrics and medical information. All fields are required for accurate predictions.
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("""
-        <div class='info-card'>
-        <h4>Step 3: Get Your Results</h4>
-        Receive your risk assessment and severity level with detailed explanations.
-        
-        <h4>Step 4: Follow Recommendations</h4>
-        Get personalized diet, habits, and monitoring recommendations based on your risk level.
-        </div>
-        """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
+
+    cta_col1, cta_col2 = st.columns([1.3, 1])
+    with cta_col1:
+        if st.button("Launch Model Insights 🚀", use_container_width=True, key="cta_model"):
+            open_model_viewer("Diabetes")
+            st.rerun()
+    with cta_col2:
+        st.markdown(
+            """
+            <div class='glass-panel floating'>
+                <h4 style="margin-bottom:0.4rem;">Today's signal</h4>
+                <p style="margin:0;color:var(--muted);">Stay proactive - run a prediction to refresh your insights.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    stats = [
+        ("Total Predictions", len(st.session_state.user_predictions), "Live volume"),
+        ("Health Points", st.session_state.points, "Gamified wellness"),
+        ("Achievements", len(st.session_state.achievements), "Milestones unlocked"),
+        ("Health Streak", f"{st.session_state.health_streak} days", "Consistency record"),
+    ]
+
+    stat_cols = st.columns(4)
+    for col, data in zip(stat_cols, stats):
+        title, value, subtitle = data
+        col.markdown(
+            f"""
+            <div class='neo-card fade-in'>
+                <p class='metric-chip'>{subtitle}</p>
+                <h2 style="margin:0.4rem 0;">{value}</h2>
+                <p style="color:var(--muted);">{title}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with st.container():
+        st.markdown("<div class='section-shell fade-in'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>Intelligence Control Center</div>", unsafe_allow_html=True)
+        intelligence_cols = st.columns([1.7, 1])
+
+        with intelligence_cols[0]:
+            st.markdown(
+                """
+                <div class='glass-panel fade-in'>
+                    <h3 style="margin-top:0;">Operational pulse</h3>
+                    <div class='timeline' style="margin-top:20px;">
+                        <div class='timeline-step'>
+                            <strong>Ingest metrics</strong>
+                            <p style="color:var(--muted); margin-bottom:0;">Stream clinical-grade inputs with validations to reduce noise.</p>
+                        </div>
+                        <div class='timeline-step'>
+                            <strong>Predict & contextualize</strong>
+                            <p style="color:var(--muted); margin-bottom:0;">Hybrid ML models output calibrated probabilities and severity tiers.</p>
+                        </div>
+                        <div class='timeline-step'>
+                            <strong>Prescribe action</strong>
+                            <p style="color:var(--muted); margin-bottom:0;">Generate diet, habit, and monitoring playbooks instantly.</p>
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with intelligence_cols[1]:
+            st.markdown(
+                """
+                <div class='glass-panel fade-in'>
+                    <h3 style="margin-top:0;">Model lineup</h3>
+                    <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
+                        <div class='info-card' style="margin:0;">
+                            <strong>🩺 Diabetes</strong>
+                            <p style="margin:4px 0 0;color:var(--muted);">Balanced accuracy tuned with engineered BMI and glucose bands.</p>
+                        </div>
+                        <div class='info-card' style="margin:0;">
+                            <strong>❤️ Heart</strong>
+                            <p style="margin:4px 0 0;color:var(--muted);">ECG-informed scoring with lifestyle-ready explanations.</p>
+                        </div>
+                        <div class='info-card' style="margin:0;">
+                            <strong>💧 Kidney</strong>
+                            <p style="margin:4px 0 0;color:var(--muted);">Holistic renal panel fusion plus symptom-aware cues.</p>
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with st.container():
+        st.markdown("<div class='section-shell fade-in'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>Navigator</div>", unsafe_allow_html=True)
+        guide_col1, guide_col2 = st.columns(2)
+
+        with guide_col1:
+            st.markdown(
+                """
+                <div class='info-card'>
+                    <h4>Workflow playbook</h4>
+                    <ul style="color:var(--muted);line-height:1.8;padding-left:20px;margin-bottom:0;">
+                        <li>Pick a prediction journey from the sidebar.</li>
+                        <li>Provide accurate biomarker inputs with confidence.</li>
+                        <li>Review the risk badge, probability, and insight tabs.</li>
+                        <li>Apply diet, habit, and monitoring strategies immediately.</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with guide_col2:
+            st.markdown(
+                """
+                <div class='info-card'>
+                    <h4>Experience promise</h4>
+                    <ul style="color:var(--muted);line-height:1.8;padding-left:20px;margin-bottom:0;">
+                        <li>All content is 100% English for global teams.</li>
+                        <li>Smooth micro-animations keep context stable.</li>
+                        <li>Notebook visualizations launch in fullscreen overlays.</li>
+                        <li>Achievements and streaks gamify healthy behaviors.</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with st.container():
+        st.markdown("<div class='section-shell fade-in'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>Model Visual Showcase</div>", unsafe_allow_html=True)
+        st.markdown("<p class='section-subtitle'>Launch immersive notebooks for each model without leaving the dashboard. Visual pipelines, charts, and diagnostics load inside a cinematic fullscreen stage.</p>", unsafe_allow_html=True)
+        showcase_cols = st.columns(3)
+        for col, (model_name, config) in zip(showcase_cols, NOTEBOOK_CONFIG.items()):
+            with col:
+                st.markdown(
+                    f"""
+                    <div class='model-card'>
+                        <div class='model-icon'>{config['icon']}</div>
+                        <h3>{model_name}</h3>
+                        <p>{config['tagline']}</p>
+                        <span class='model-chip'>Full notebook & diagrams</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                if st.button(f"View {model_name}", use_container_width=True, key=f"view_{model_name.lower().replace(' ', '_')}"):
+                    open_model_viewer(model_name)
+                    st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 if selected == 'Diabetes Prediction':
-    st.markdown("<div class='section-header'>🩺 Diabetes Risk Assessment</div>", unsafe_allow_html=True)
-    st.markdown("Enter your health metrics to assess your diabetes risk. All fields are required.")
+    with st.container():
+        st.markdown("<div class='section-shell fade-in'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>🩺 Diabetes Risk Assessment</div>", unsafe_allow_html=True)
+        st.markdown("Enter your health metrics to assess your diabetes risk. All fields are required.")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            Pregnancies = st.number_input("Number of Pregnancies", min_value=0, max_value=20, value=0)
+        with col2:
+            Glucose = st.number_input("Glucose Level (mg/dL)", min_value=0, max_value=300, value=100)
+        with col3:
+            BloodPressure = st.number_input("Blood Pressure (mmHg)", min_value=0, max_value=200, value=70)
+        
+        with col1:
+            SkinThickness = st.number_input("Skin Thickness (mm)", min_value=0, max_value=100, value=20)
+        with col2:
+            Insulin = st.number_input("Insulin Level (mIU/L)", min_value=0, max_value=900, value=80)
+        with col3:
+            BMI = st.number_input("BMI (Body Mass Index)", min_value=10.0, max_value=60.0, value=25.0)
+        
+        with col1:
+            DiabetesPedigreeFunction = st.number_input("Diabetes Pedigree Function", min_value=0.0, max_value=2.5, value=0.5)
+        with col2:
+            Age = st.number_input("Age (years)", min_value=18, max_value=120, value=30)
+        
+        trigger = st.button("🔍 Assess Diabetes Risk", use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        Pregnancies = st.number_input("Number of Pregnancies", min_value=0, max_value=20, value=0)
-    with col2:
-        Glucose = st.number_input("Glucose Level (mg/dL)", min_value=0, max_value=300, value=100)
-    with col3:
-        BloodPressure = st.number_input("Blood Pressure (mmHg)", min_value=0, max_value=200, value=70)
-    
-    with col1:
-        SkinThickness = st.number_input("Skin Thickness (mm)", min_value=0, max_value=100, value=20)
-    with col2:
-        Insulin = st.number_input("Insulin Level (mIU/L)", min_value=0, max_value=900, value=80)
-    with col3:
-        BMI = st.number_input("BMI (Body Mass Index)", min_value=10.0, max_value=60.0, value=25.0)
-    
-    with col1:
-        DiabetesPedigreeFunction = st.number_input("Diabetes Pedigree Function", min_value=0.0, max_value=2.5, value=0.5)
-    with col2:
-        Age = st.number_input("Age (years)", min_value=18, max_value=120, value=30)
-    
-    if st.button("🔍 Assess Diabetes Risk", use_container_width=True):
+    if trigger:
         try:
             # Feature engineering
             bmi_val = float(BMI)
@@ -913,17 +1188,15 @@ if selected == 'Diabetes Prediction':
                     st.session_state.achievements.append(achievement)
             
             if prediction == 1:
-                st.markdown(
-                    "<div class='warning-message'><b>⚠️ Alert:</b> You have a higher risk of diabetes. Please consult with a healthcare provider.</div>",
-                    unsafe_allow_html=True
-                )
+                message_block = "<div class='warning-message'><b>⚠️ Alert:</b> You have a higher risk of diabetes. Please consult with a healthcare provider.</div>"
             else:
-                st.markdown(
-                    "<div class='success-message'><b>✅ Good News:</b> Your diabetes risk is low. Continue maintaining healthy habits!</div>",
-                    unsafe_allow_html=True
-                )
-            
-            render_recommendations("diabetes", p1)
+                message_block = "<div class='success-message'><b>✅ Good News:</b> Your diabetes risk is low. Continue maintaining healthy habits!</div>"
+
+            with st.container():
+                st.markdown("<div class='result-shell'>", unsafe_allow_html=True)
+                st.markdown(message_block, unsafe_allow_html=True)
+                render_recommendations("diabetes", p1)
+                st.markdown("</div>", unsafe_allow_html=True)
             
             if achievements:
                 st.markdown("<div class='section-header'>🏆 New Achievements Unlocked!</div>", unsafe_allow_html=True)
@@ -935,51 +1208,56 @@ if selected == 'Diabetes Prediction':
 
 
 if selected == 'Heart Disease Prediction':
-    st.markdown("<div class='section-header'>❤️ Heart Disease Risk Assessment</div>", unsafe_allow_html=True)
-    st.markdown("Enter your cardiovascular health metrics for an accurate risk assessment.")
+    with st.container():
+        st.markdown("<div class='section-shell fade-in'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>❤️ Heart Disease Risk Assessment</div>", unsafe_allow_html=True)
+        st.markdown("Enter your cardiovascular health metrics for an accurate risk assessment.")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            age = st.number_input("Age (years)", min_value=18, max_value=120, value=50)
+        with col2:
+            sex = st.selectbox("Gender", options=[("Female", 0), ("Male", 1)], format_func=lambda x: x[0])
+            sex = sex[1]
+        with col3:
+            cp = st.selectbox("Chest Pain Type", options=[(f"Type {i}", i) for i in range(4)], format_func=lambda x: x[0])
+            cp = cp[1]
+        
+        with col1:
+            trestbps = st.number_input("Resting Blood Pressure (mmHg)", min_value=80, max_value=200, value=120)
+        with col2:
+            chol = st.number_input("Cholesterol (mg/dL)", min_value=100, max_value=400, value=200)
+        with col3:
+            fbs = st.selectbox("Fasting Blood Sugar > 120 mg/dL", options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
+            fbs = fbs[1]
+        
+        with col1:
+            restecg = st.selectbox("Resting ECG Result", options=[(f"Type {i}", i) for i in range(3)], format_func=lambda x: x[0])
+            restecg = restecg[1]
+        with col2:
+            thalach = st.number_input("Max Heart Rate Achieved (bpm)", min_value=60, max_value=220, value=150)
+        with col3:
+            exang = st.selectbox("Exercise Induced Angina", options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
+            exang = exang[1]
+        
+        with col1:
+            oldpeak = st.number_input("ST Depression (0-6)", min_value=0.0, max_value=6.0, value=0.0)
+        with col2:
+            slope = st.selectbox("ST Slope", options=[(f"Type {i}", i) for i in range(3)], format_func=lambda x: x[0])
+            slope = slope[1]
+        with col3:
+            ca = st.selectbox("Major Vessels (0-4)", options=[(str(i), i) for i in range(5)], format_func=lambda x: x[0])
+            ca = ca[1]
+        
+        with col1:
+            thal = st.selectbox("Thalassemia", options=[("Normal", 0), ("Fixed", 1), ("Reversible", 2)], format_func=lambda x: x[0])
+            thal = thal[1]
+        
+        heart_trigger = st.button("🔍 Assess Heart Disease Risk", use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        age = st.number_input("Age (years)", min_value=18, max_value=120, value=50)
-    with col2:
-        sex = st.selectbox("Gender", options=[("Female", 0), ("Male", 1)], format_func=lambda x: x[0])
-        sex = sex[1]
-    with col3:
-        cp = st.selectbox("Chest Pain Type", options=[(f"Type {i}", i) for i in range(4)], format_func=lambda x: x[0])
-        cp = cp[1]
-    
-    with col1:
-        trestbps = st.number_input("Resting Blood Pressure (mmHg)", min_value=80, max_value=200, value=120)
-    with col2:
-        chol = st.number_input("Cholesterol (mg/dL)", min_value=100, max_value=400, value=200)
-    with col3:
-        fbs = st.selectbox("Fasting Blood Sugar > 120 mg/dL", options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
-        fbs = fbs[1]
-    
-    with col1:
-        restecg = st.selectbox("Resting ECG Result", options=[(f"Type {i}", i) for i in range(3)], format_func=lambda x: x[0])
-        restecg = restecg[1]
-    with col2:
-        thalach = st.number_input("Max Heart Rate Achieved (bpm)", min_value=60, max_value=220, value=150)
-    with col3:
-        exang = st.selectbox("Exercise Induced Angina", options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
-        exang = exang[1]
-    
-    with col1:
-        oldpeak = st.number_input("ST Depression (0-6)", min_value=0.0, max_value=6.0, value=0.0)
-    with col2:
-        slope = st.selectbox("ST Slope", options=[(f"Type {i}", i) for i in range(3)], format_func=lambda x: x[0])
-        slope = slope[1]
-    with col3:
-        ca = st.selectbox("Major Vessels (0-4)", options=[(str(i), i) for i in range(5)], format_func=lambda x: x[0])
-        ca = ca[1]
-    
-    with col1:
-        thal = st.selectbox("Thalassemia", options=[("Normal", 0), ("Fixed", 1), ("Reversible", 2)], format_func=lambda x: x[0])
-        thal = thal[1]
-    
-    if st.button("🔍 Assess Heart Disease Risk", use_container_width=True):
+    if heart_trigger:
         try:
             user_input = [age, sex, cp, trestbps, chol, fbs, restecg, thalach, exang, oldpeak, slope, ca, thal]
             user_input = [float(x) for x in user_input]
@@ -1000,17 +1278,15 @@ if selected == 'Heart Disease Prediction':
                     st.session_state.achievements.append(achievement)
             
             if prediction == 1:
-                st.markdown(
-                    "<div class='warning-message'><b>⚠️ Alert:</b> You have a higher risk of heart disease. Seek medical consultation immediately.</div>",
-                    unsafe_allow_html=True
-                )
+                message_block = "<div class='warning-message'><b>⚠️ Alert:</b> You have a higher risk of heart disease. Seek medical consultation immediately.</div>"
             else:
-                st.markdown(
-                    "<div class='success-message'><b>✅ Good News:</b> Your heart disease risk is low. Keep up your healthy lifestyle!</div>",
-                    unsafe_allow_html=True
-                )
+                message_block = "<div class='success-message'><b>✅ Good News:</b> Your heart disease risk is low. Keep up your healthy lifestyle!</div>"
             
-            render_recommendations("heart", p1)
+            with st.container():
+                st.markdown("<div class='result-shell'>", unsafe_allow_html=True)
+                st.markdown(message_block, unsafe_allow_html=True)
+                render_recommendations("heart", p1)
+                st.markdown("</div>", unsafe_allow_html=True)
             
             if achievements:
                 st.markdown("<div class='section-header'>🏆 New Achievements Unlocked!</div>", unsafe_allow_html=True)
@@ -1022,77 +1298,82 @@ if selected == 'Heart Disease Prediction':
 
 
 if selected == 'Kidney Disease Prediction':
-    st.markdown("<div class='section-header'>💧 Kidney Disease Risk Assessment</div>", unsafe_allow_html=True)
-    st.markdown("Provide your kidney health metrics for a comprehensive risk evaluation.")
+    with st.container():
+        st.markdown("<div class='section-shell fade-in'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>💧 Kidney Disease Risk Assessment</div>", unsafe_allow_html=True)
+        st.markdown("Provide your kidney health metrics for a comprehensive risk evaluation.")
+        
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            age = st.number_input('Age', min_value=18, max_value=120, value=50)
+        with col2:
+            blood_pressure = st.number_input('Blood Pressure', min_value=60, max_value=200, value=80)
+        with col3:
+            specific_gravity = st.number_input('Specific Gravity', min_value=1.0, max_value=1.05, value=1.020)
+        with col4:
+            albumin = st.selectbox('Albumin Level', options=[(str(i), i) for i in range(6)], format_func=lambda x: x[0])
+            albumin = albumin[1]
+        with col5:
+            sugar = st.selectbox('Sugar Level', options=[(str(i), i) for i in range(6)], format_func=lambda x: x[0])
+            sugar = sugar[1]
+        
+        with col1:
+            red_blood_cells = st.selectbox('Red Blood Cells', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
+            red_blood_cells = red_blood_cells[1]
+        with col2:
+            pus_cell = st.selectbox('Pus Cells', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
+            pus_cell = pus_cell[1]
+        with col3:
+            pus_cell_clumps = st.selectbox('Pus Cell Clumps', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
+            pus_cell_clumps = pus_cell_clumps[1]
+        with col4:
+            bacteria = st.selectbox('Bacteria', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
+            bacteria = bacteria[1]
+        with col5:
+            blood_glucose_random = st.number_input('Random Blood Glucose', min_value=50, max_value=500, value=100)
+        
+        with col1:
+            blood_urea = st.number_input('Blood Urea', min_value=10, max_value=200, value=30)
+        with col2:
+            serum_creatinine = st.number_input('Serum Creatinine', min_value=0.5, max_value=10.0, value=1.0)
+        with col3:
+            sodium = st.number_input('Sodium', min_value=120, max_value=160, value=140)
+        with col4:
+            potassium = st.number_input('Potassium', min_value=3.0, max_value=7.0, value=4.5)
+        with col5:
+            haemoglobin = st.number_input('Hemoglobin', min_value=5.0, max_value=20.0, value=13.0)
+        
+        with col1:
+            packed_cell_volume = st.number_input('Packed Cell Volume', min_value=10, max_value=60, value=40)
+        with col2:
+            white_blood_cell_count = st.number_input('White Blood Cell Count', min_value=2000, max_value=15000, value=7000)
+        with col3:
+            red_blood_cell_count = st.number_input('Red Blood Cell Count', min_value=2000000, max_value=8000000, value=5000000)
+        with col4:
+            hypertension = st.selectbox('Hypertension', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
+            hypertension = hypertension[1]
+        with col5:
+            diabetes_mellitus = st.selectbox('Diabetes Mellitus', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
+            diabetes_mellitus = diabetes_mellitus[1]
+        
+        with col1:
+            coronary_artery_disease = st.selectbox('Coronary Artery Disease', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
+            coronary_artery_disease = coronary_artery_disease[1]
+        with col2:
+            appetite = st.selectbox('Appetite', options=[("Good", 0), ("Poor", 1)], format_func=lambda x: x[0])
+            appetite = appetite[1]
+        with col3:
+            peda_edema = st.selectbox('Pedal Edema', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
+            peda_edema = peda_edema[1]
+        with col4:
+            aanemia = st.selectbox('Anemia', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
+            aanemia = aanemia[1]
+        
+        kidney_trigger = st.button("🔍 Assess Kidney Disease Risk", use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
     
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
-    with col1:
-        age = st.number_input('Age', min_value=18, max_value=120, value=50)
-    with col2:
-        blood_pressure = st.number_input('Blood Pressure', min_value=60, max_value=200, value=80)
-    with col3:
-        specific_gravity = st.number_input('Specific Gravity', min_value=1.0, max_value=1.05, value=1.020)
-    with col4:
-        albumin = st.selectbox('Albumin Level', options=[(str(i), i) for i in range(6)], format_func=lambda x: x[0])
-        albumin = albumin[1]
-    with col5:
-        sugar = st.selectbox('Sugar Level', options=[(str(i), i) for i in range(6)], format_func=lambda x: x[0])
-        sugar = sugar[1]
-    
-    with col1:
-        red_blood_cells = st.selectbox('Red Blood Cells', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
-        red_blood_cells = red_blood_cells[1]
-    with col2:
-        pus_cell = st.selectbox('Pus Cells', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
-        pus_cell = pus_cell[1]
-    with col3:
-        pus_cell_clumps = st.selectbox('Pus Cell Clumps', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
-        pus_cell_clumps = pus_cell_clumps[1]
-    with col4:
-        bacteria = st.selectbox('Bacteria', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
-        bacteria = bacteria[1]
-    with col5:
-        blood_glucose_random = st.number_input('Random Blood Glucose', min_value=50, max_value=500, value=100)
-    
-    with col1:
-        blood_urea = st.number_input('Blood Urea', min_value=10, max_value=200, value=30)
-    with col2:
-        serum_creatinine = st.number_input('Serum Creatinine', min_value=0.5, max_value=10.0, value=1.0)
-    with col3:
-        sodium = st.number_input('Sodium', min_value=120, max_value=160, value=140)
-    with col4:
-        potassium = st.number_input('Potassium', min_value=3.0, max_value=7.0, value=4.5)
-    with col5:
-        haemoglobin = st.number_input('Hemoglobin', min_value=5.0, max_value=20.0, value=13.0)
-    
-    with col1:
-        packed_cell_volume = st.number_input('Packed Cell Volume', min_value=10, max_value=60, value=40)
-    with col2:
-        white_blood_cell_count = st.number_input('White Blood Cell Count', min_value=2000, max_value=15000, value=7000)
-    with col3:
-        red_blood_cell_count = st.number_input('Red Blood Cell Count', min_value=2000000, max_value=8000000, value=5000000)
-    with col4:
-        hypertension = st.selectbox('Hypertension', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
-        hypertension = hypertension[1]
-    with col5:
-        diabetes_mellitus = st.selectbox('Diabetes Mellitus', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
-        diabetes_mellitus = diabetes_mellitus[1]
-    
-    with col1:
-        coronary_artery_disease = st.selectbox('Coronary Artery Disease', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
-        coronary_artery_disease = coronary_artery_disease[1]
-    with col2:
-        appetite = st.selectbox('Appetite', options=[("Good", 0), ("Poor", 1)], format_func=lambda x: x[0])
-        appetite = appetite[1]
-    with col3:
-        peda_edema = st.selectbox('Pedal Edema', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
-        peda_edema = peda_edema[1]
-    with col4:
-        aanemia = st.selectbox('Anemia', options=[("No", 0), ("Yes", 1)], format_func=lambda x: x[0])
-        aanemia = aanemia[1]
-    
-    if st.button("🔍 Assess Kidney Disease Risk", use_container_width=True):
+    if kidney_trigger:
         try:
             user_input = [
                 age, blood_pressure, specific_gravity, albumin, sugar,
@@ -1122,17 +1403,15 @@ if selected == 'Kidney Disease Prediction':
                     st.session_state.achievements.append(achievement)
             
             if prediction == 1:
-                st.markdown(
-                    "<div class='warning-message'><b>⚠️ Alert:</b> You have a higher risk of kidney disease. Consult a nephrologist.</div>",
-                    unsafe_allow_html=True
-                )
+                message_block = "<div class='warning-message'><b>⚠️ Alert:</b> You have a higher risk of kidney disease. Consult a nephrologist.</div>"
             else:
-                st.markdown(
-                    "<div class='success-message'><b>✅ Good News:</b> Your kidney disease risk is low. Maintain your healthy habits!</div>",
-                    unsafe_allow_html=True
-                )
+                message_block = "<div class='success-message'><b>✅ Good News:</b> Your kidney disease risk is low. Maintain your healthy habits!</div>"
             
-            render_recommendations("kidney", p1)
+            with st.container():
+                st.markdown("<div class='result-shell'>", unsafe_allow_html=True)
+                st.markdown(message_block, unsafe_allow_html=True)
+                render_recommendations("kidney", p1)
+                st.markdown("</div>", unsafe_allow_html=True)
             
             if achievements:
                 st.markdown("<div class='section-header'>🏆 New Achievements Unlocked!</div>", unsafe_allow_html=True)
@@ -1144,18 +1423,15 @@ if selected == 'Kidney Disease Prediction':
 
 
 if selected == 'Health Tips':
-    st.markdown("<div class='section-header'>💡 Daily Health Tips & Education</div>", unsafe_allow_html=True)
-    st.markdown("Learn evidence-based health tips to improve your wellbeing.")
-    
     tips = get_health_tips()
     
-    # Display tips in a grid
-    cols = st.columns(2)
-    for idx, tip in enumerate(tips):
-        with cols[idx % 2]:
-            st.markdown(f"<div class='info-card'>{tip}</div>", unsafe_allow_html=True)
-    
-    st.markdown("<div class='section-header'>📚 Disease Information</div>", unsafe_allow_html=True)
+    with st.container():
+        st.markdown("<div class='section-shell fade-in'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>💡 Daily Health Tips & Education</div>", unsafe_allow_html=True)
+        st.markdown("Learn evidence-based health tips to improve your wellbeing.")
+        tips_markup = "".join(f"<div class='tip-card'>{tip}</div>" for tip in tips)
+        st.markdown(f"<div class='tip-grid'>{tips_markup}</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
     
     disease_info = {
         "Diabetes": "Diabetes is a chronic condition affecting how your body processes blood glucose. Type 2 diabetes is the most common form, often preventable through lifestyle changes.",
@@ -1163,67 +1439,74 @@ if selected == 'Health Tips':
         "Kidney Disease": "Chronic kidney disease develops gradually and may not show symptoms until advanced stages. Early detection and management can slow progression significantly.",
     }
     
-    selected_disease = st.selectbox("Select a Disease to Learn More", list(disease_info.keys()))
-    st.markdown(f"<div class='info-card'><h4>{selected_disease}</h4><p>{disease_info[selected_disease]}</p></div>", unsafe_allow_html=True)
+    with st.container():
+        st.markdown("<div class='section-shell fade-in'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>📚 Disease Information</div>", unsafe_allow_html=True)
+        selected_disease = st.selectbox("Select a Disease to Learn More", list(disease_info.keys()))
+        st.markdown(f"<div class='info-panel'><h4>{selected_disease}</h4><p>{disease_info[selected_disease]}</p></div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 if selected == 'My Progress':
-    st.markdown("<div class='section-header'>📊 Your Health Journey</div>", unsafe_allow_html=True)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown(f"""
-        <div class='stat-box'>
-            <h4>Total Predictions</h4>
-            <div class='value'>{len(st.session_state.user_predictions)}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div class='stat-box'>
-            <h4>Health Points</h4>
-            <div class='value'>{st.session_state.points}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f"""
-        <div class='stat-box'>
-            <h4>Achievements</h4>
-            <div class='value'>{len(st.session_state.achievements)}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col4:
-        st.markdown(f"""
-        <div class='stat-box'>
-            <h4>Health Streak</h4>
-            <div class='value'>{st.session_state.health_streak} days</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    if st.session_state.achievements:
-        st.markdown("<div class='section-header'>🏆 Your Achievements</div>", unsafe_allow_html=True)
-        for achievement in st.session_state.achievements:
-            st.markdown(f"<div class='achievement-badge'>{achievement}</div>", unsafe_allow_html=True)
-    
-    if st.session_state.user_predictions:
-        st.markdown("<div class='section-header'>📈 Prediction History</div>", unsafe_allow_html=True)
+    with st.container():
+        st.markdown("<div class='section-shell fade-in'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>📊 Your Health Journey</div>", unsafe_allow_html=True)
         
-        # Create a dataframe for predictions
-        predictions_data = []
-        for pred in st.session_state.user_predictions:
-            level, _ = prob_to_severity(pred['risk'])
-            predictions_data.append({
-                'Disease': pred['disease'],
-                'Risk Level': level,
-                'Probability': f"{pred['risk']:.1%}",
-                'Date': pred['timestamp'].strftime("%Y-%m-%d %H:%M")
-            })
+        col1, col2, col3, col4 = st.columns(4)
         
-        df = pd.DataFrame(predictions_data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-    else:
-        st.info("📝 No predictions yet. Start by selecting a disease prediction model from the sidebar!")
+        with col1:
+            st.markdown(f"""
+            <div class='stat-box'>
+                <h4>Total Predictions</h4>
+                <div class='value'>{len(st.session_state.user_predictions)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class='stat-box'>
+                <h4>Health Points</h4>
+                <div class='value'>{st.session_state.points}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div class='stat-box'>
+                <h4>Achievements</h4>
+                <div class='value'>{len(st.session_state.achievements)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col4:
+            st.markdown(f"""
+            <div class='stat-box'>
+                <h4>Health Streak</h4>
+                <div class='value'>{st.session_state.health_streak} days</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        if st.session_state.achievements:
+            st.markdown("<div class='section-header'>🏆 Your Achievements</div>", unsafe_allow_html=True)
+            for achievement in st.session_state.achievements:
+                st.markdown(f"<div class='achievement-badge'>{achievement}</div>", unsafe_allow_html=True)
+        
+        if st.session_state.user_predictions:
+            st.markdown("<div class='section-header'>📈 Prediction History</div>", unsafe_allow_html=True)
+            
+            # Create a dataframe for predictions
+            predictions_data = []
+            for pred in st.session_state.user_predictions:
+                level, _ = prob_to_severity(pred['risk'])
+                predictions_data.append({
+                    'Disease': pred['disease'],
+                    'Risk Level': level,
+                    'Probability': f"{pred['risk']:.1%}",
+                    'Date': pred['timestamp'].strftime("%Y-%m-%d %H:%M")
+                })
+            
+            df = pd.DataFrame(predictions_data)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        else:
+            st.info("📝 No predictions yet. Start by selecting a disease prediction model from the sidebar!")
+        st.markdown("</div>", unsafe_allow_html=True)
